@@ -1,0 +1,6 @@
+path: G:\פרויקט שנתי\AAAProject\ניסוי אחרון\automatic-number-plate-recognition-python-yolov8-main\data
+train: images/train
+val: images/train
+
+names:
+  0: [license_plate]
