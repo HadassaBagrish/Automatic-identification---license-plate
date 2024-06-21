@@ -3,13 +3,28 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 
-def interpolate_bounding_boxes(data):
+async def interpolated_data(queue):
+    while queue:
+        data = list(queue)
+        interpolated_data = await interpolate_bounding_boxes(data)
+
+        # Clear the existing queue
+        queue.clear()
+
+        # Add interpolated data back into the queue
+        for item in interpolated_data:
+            queue.append(item)
+    return queue
+
+async def interpolate_bounding_boxes(data):
+
     # Extract necessary data columns from input data
     frame_numbers = np.array([int(row['frame_nmr']) for row in data])
     car_ids = np.array([int(float(row['car_id'])) for row in data])
-    car_bboxes = np.array([list(map(float, row['car_bbox'][1:-1].split())) for row in data])
-    license_plate_bboxes = np.array([list(map(float, row['license_plate_bbox'][1:-1].split())) for row in data])
-
+    # car_bboxes = np.array([list(map(float, row['car_bbox'][1:-1].split())) for row in data])
+    car_bboxes = np.array([list(map(float, row['car']['bbox'])) for row in data])
+    # license_plate_bboxes = np.array([list(map(float, row['license_plate_bbox'][1:-1].split())) for row in data])
+    license_plate_bboxes = np.array([list(map(float, row['license_plate']['bbox'])) for row in data])
     interpolated_data = []
     unique_car_ids = np.unique(car_ids)
     for car_id in unique_car_ids:
@@ -60,7 +75,7 @@ def interpolate_bounding_boxes(data):
             row['car_bbox'] = ' '.join(map(str, car_bboxes_interpolated[i]))
             row['license_plate_bbox'] = ' '.join(map(str, license_plate_bboxes_interpolated[i]))
 
-            if str(frame_number) not in frame_numbers_:
+            if frame_number not in frame_numbers_:
                 # Imputed row, set the following fields to '0'
                 row['license_plate_bbox_score'] = '0'
                 row['license_number'] = '0'
@@ -77,17 +92,43 @@ def interpolate_bounding_boxes(data):
     return interpolated_data
 
 
-# Load the CSV file
-with open('test1.csv', 'r') as file:
-    reader = csv.DictReader(file)
-    data = list(reader)
+async def merge_rows(results):
+    # המרת רשימת מילונים ל-DataFrame של pandas
+    results_df = pd.DataFrame(results)
+    # לוודא שהעמודות הרלוונטיות הן מסוג מספרי
+    results_df['car_id'] = results_df['car_id'].astype(int)
+    results_df['license_number_score'] = results_df['license_number_score'].astype(float)
 
-# Interpolate missing data
-interpolated_data = interpolate_bounding_boxes(data)
+    # יצירת מבני נתונים לאחסון התוצאות
+    license_plate = {}
+    validation = {}
 
-# Write updated data to a new CSV file
-header = ['frame_nmr', 'car_id', 'car_bbox', 'license_plate_bbox', 'license_plate_bbox_score', 'license_number', 'license_number_score']
-with open('test_interpolated.csv', 'w', newline='') as file:
-    writer = csv.DictWriter(file, fieldnames=header)
-    writer.writeheader()
-    writer.writerows(interpolated_data)
+    for car_id in np.unique(results_df['car_id']):
+        car_results = results_df[results_df['car_id'] == car_id]
+        max_score_row = car_results.loc[car_results['license_number_score'].idxmax()]
+        max_score = max_score_row['license_number_score']
+
+        license_plate[car_id] = {
+            'license_crop': None,
+            'license_plate_number': max_score_row['license_number']
+        }
+        validation[car_id] = {
+            'frame_nmr': max_score_row['frame_nmr'],
+            'car_bbox': max_score_row['car_bbox'],
+            'license_number': max_score_row['license_number']
+        }
+#
+# # Load the CSV file
+# with open('test1.csv', 'r') as file:
+#     reader = csv.DictReader(file)
+#     data = list(reader)
+#
+# # Interpolate missing data
+# interpolated_data = interpolate_bounding_boxes(data)
+#
+# # Write updated data to a new CSV file
+# header = ['frame_nmr', 'car_id', 'car_bbox', 'license_plate_bbox', 'license_plate_bbox_score', 'license_number', 'license_number_score']
+# with open('test_interpolated.csv', 'w', newline='') as file:
+#     writer = csv.DictWriter(file, fieldnames=header)
+#     writer.writeheader()
+#     writer.writerows(interpolated_data)
