@@ -38,7 +38,7 @@ async def process_video():
     results = {}
 
     # global frame_queue
-    frame_queue = deque(maxlen=100)  # Change the maxlen to control the queue size
+    frame_queue = deque()  # Change the maxlen to control the queue size maxlen=100
 
     # Process video frames
     frame_nmr = -1

@@ -1,20 +1,24 @@
 import csv
 import numpy as np
 from scipy.interpolate import interp1d
+import pandas as pd
 
 
 async def interpolated_data(queue):
+    # אסוף את כל הנתונים מהתור לרשימה
+    data = []
     while queue:
-        data = list(queue)
-        interpolated_data = await interpolate_bounding_boxes(data)
+        data.append(queue.popleft())
 
-        # Clear the existing queue
-        queue.clear()
+    # בצע אינטרפולציה על הנתונים
+    interpolated_data = await interpolate_bounding_boxes(data)
 
-        # Add interpolated data back into the queue
-        for item in interpolated_data:
-            queue.append(item)
+    # הכנס את הנתונים החדשים חזרה לתור
+    for item in interpolated_data:
+        queue.append(item)
+
     return queue
+
 
 async def interpolate_bounding_boxes(data):
 
@@ -66,7 +70,6 @@ async def interpolate_bounding_boxes(data):
 
             car_bboxes_interpolated.append(car_bbox)
             license_plate_bboxes_interpolated.append(license_plate_bbox)
-
         for i in range(len(car_bboxes_interpolated)):
             frame_number = first_frame_number + i
             row = {}
@@ -75,26 +78,33 @@ async def interpolate_bounding_boxes(data):
             row['car_bbox'] = ' '.join(map(str, car_bboxes_interpolated[i]))
             row['license_plate_bbox'] = ' '.join(map(str, license_plate_bboxes_interpolated[i]))
 
-            if frame_number not in frame_numbers_:
+            if frame_number in frame_numbers_:
+                # Original row, retrieve values from the input data if available
+                original_row = [p for p in data if int(p['frame_nmr']) == frame_number and int(float(p['car_id'])) == int(float(car_id))][0]
+                row['license_plate_bbox_score'] = original_row['license_plate']['bbox_score'] if 'bbox_score' in original_row['license_plate'] else '0'
+                row['license_number'] = original_row['license_plate']['text'] if 'text' in original_row['license_plate'] else '0'
+                row['license_number_score'] = original_row['license_plate']['text_score'] if 'text_score' in original_row['license_plate'] else '0'
+
+                # row['license_plate_bbox_score'] = original_row['license_plate_bbox_score'] if 'license_plate_bbox_score' in original_row else '0'
+                # row['license_number'] = original_row['license_number'] if 'license_number' in original_row else '0'
+                # row['license_number_score'] = original_row['license_number_score'] if 'license_number_score' in original_row else '0'
+            else:
                 # Imputed row, set the following fields to '0'
                 row['license_plate_bbox_score'] = '0'
                 row['license_number'] = '0'
                 row['license_number_score'] = '0'
-            else:
-                # Original row, retrieve values from the input data if available
-                original_row = [p for p in data if int(p['frame_nmr']) == frame_number and int(float(p['car_id'])) == int(float(car_id))][0]
-                row['license_plate_bbox_score'] = original_row['license_plate_bbox_score'] if 'license_plate_bbox_score' in original_row else '0'
-                row['license_number'] = original_row['license_number'] if 'license_number' in original_row else '0'
-                row['license_number_score'] = original_row['license_number_score'] if 'license_number_score' in original_row else '0'
 
             interpolated_data.append(row)
 
     return interpolated_data
 
 
-async def merge_rows(results):
+async def merge_rows(queue):
+    data = []
+    while queue:
+        data.append(queue.popleft())
     # המרת רשימת מילונים ל-DataFrame של pandas
-    results_df = pd.DataFrame(results)
+    results_df = pd.DataFrame(data)
     # לוודא שהעמודות הרלוונטיות הן מסוג מספרי
     results_df['car_id'] = results_df['car_id'].astype(int)
     results_df['license_number_score'] = results_df['license_number_score'].astype(float)
@@ -117,6 +127,14 @@ async def merge_rows(results):
             'car_bbox': max_score_row['car_bbox'],
             'license_number': max_score_row['license_number']
         }
+        # הוסף לתור את התוצאות
+        queue.append ({
+            'car_id': car_id,
+            'license_plate': license_plate[car_id],
+            'validation': validation[car_id]
+        })
+    return queue
+
 #
 # # Load the CSV file
 # with open('test1.csv', 'r') as file:
